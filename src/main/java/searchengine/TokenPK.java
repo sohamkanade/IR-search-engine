@@ -17,8 +17,6 @@ import javax.persistence.Embeddable;
 @Embeddable
 public class TokenPK implements Serializable {
 
-    private static final long serialVersionUID = 7488214772071462430L;
-
     @Basic(optional = false)
     @Column(name = "token_name")
     private String tokenName;

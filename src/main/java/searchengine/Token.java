@@ -26,15 +26,19 @@ import javax.xml.bind.annotation.XmlRootElement;
     @NamedQuery(name = "Token.findAll", query = "SELECT t FROM Token t")
     , @NamedQuery(name = "Token.findByTokenName", query = "SELECT t FROM Token t WHERE t.tokenPK.tokenName = :tokenName")
     , @NamedQuery(name = "Token.findByDocumentID", query = "SELECT t FROM Token t WHERE t.tokenPK.documentID = :documentID")
-    , @NamedQuery(name = "Token.findByFrequency", query = "SELECT t FROM Token t WHERE t.frequency = :frequency")})
+    , @NamedQuery(name = "Token.findByTfrequency", query = "SELECT t FROM Token t WHERE t.tfrequency = :tfrequency")
+    , @NamedQuery(name = "Token.findByWeight", query = "SELECT t FROM Token t WHERE t.weight = :weight")})
 public class Token implements Serializable {
 
     private static final long serialVersionUID = 1L;
     @EmbeddedId
     protected TokenPK tokenPK;
     @Basic(optional = false)
-    @Column(name = "frequency")
-    private int frequency;
+    @Column(name = "tfrequency")
+    private double tfrequency;
+    @Basic(optional = false)
+    @Column(name = "weight")
+    private int weight;
 
     public Token() {
     }
@@ -43,9 +47,10 @@ public class Token implements Serializable {
         this.tokenPK = tokenPK;
     }
 
-    public Token(TokenPK tokenPK, int frequency) {
+    public Token(TokenPK tokenPK, double tfrequency, int weight) {
         this.tokenPK = tokenPK;
-        this.frequency = frequency;
+        this.tfrequency = tfrequency;
+        this.weight = weight;
     }
 
     public Token(String tokenName, String documentID) {
@@ -60,12 +65,20 @@ public class Token implements Serializable {
         this.tokenPK = tokenPK;
     }
 
-    public int getFrequency() {
-        return frequency;
+    public double getTfrequency() {
+        return tfrequency;
     }
 
-    public void setFrequency(int frequency) {
-        this.frequency = frequency;
+    public void setTfrequency(double tfrequency) {
+        this.tfrequency = tfrequency;
+    }
+
+    public int getWeight() {
+        return weight;
+    }
+
+    public void setWeight(int weight) {
+        this.weight = weight;
     }
 
     @Override

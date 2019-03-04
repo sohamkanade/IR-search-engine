@@ -12,10 +12,12 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 import javax.persistence.EntityManager;
 import javax.persistence.EntityManagerFactory;
 import javax.persistence.Persistence;
 import javax.persistence.TypedQuery;
+import org.apache.commons.io.FileUtils;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 
@@ -25,7 +27,7 @@ import org.jsoup.nodes.Document;
  */
 public class Driver {
 
-    final static String FILE_PATH = "/home/soham/Desktop/webpages/WEBPAGES_RAW/";
+    final static String FILE_PATH = "/home/soham/Desktop/blah/";
 
     final static List<String> STOP_WORDS = Arrays.asList("a", "able", "about", "across", "after", "all", "almost",
             "also", "am", "among", "an", "and", "any", "are", "as", "at", "be", "because", "been", "brought", "but", "by", "can",
@@ -40,6 +42,18 @@ public class Driver {
 
     private static final String CHECK_DOCUMENT = "SELECT t FROM Token t WHERE t.tokenPK.tokenName = :tokenName AND t.tokenPK.documentID = :documentID";
 
+    /**
+     * Total Documents Indexed
+     */
+    private static final int CORPUS_SIZE = 35474;
+
+    /**
+     * Weights for Title, Meta, Heading, Body
+     */
+    private static final int WEIGHT_TITLE = 50;
+    private static final int WEIGHT_HEADING = 20;
+    private static final int WEIGHT_BODY = 30;
+
     private static EntityManagerFactory emFactory;
     static int fileCounter = 0;
 
@@ -49,11 +63,43 @@ public class Driver {
         List<File> files = listAllFiles(new File(FILE_PATH), new ArrayList<>());
 
         for (File document : files) {
+            if (!isValidHTML(FileUtils.readFileToString(document))) {
+                continue;
+            }
+
+            Map<String, Integer> tokenWeights = new HashMap<>();
+            Map<String, Integer> tokenCounter = new HashMap<>();
 
             String parsedString = parseHTML(document);
             String docId = document.getAbsolutePath().replace(FILE_PATH, "").replace("\\", "/");
+            parsedString = parsedString.trim();
+            String[] tokens = parsedString.split(" ");
+            int totalWords = tokens.length;
 
-            System.out.println("Indexing file: " + docId);
+            for (String token : tokens) {
+                int weight = getTokenWeight(token);
+                token = token.substring(3, token.length());
+                
+                int tokenCount = tokenCounter.getOrDefault(token, 0);
+                tokenCount++;
+                tokenCounter.put(token, tokenCount);
+                
+                int existingWeight = tokenWeights.getOrDefault(token, 0);
+                
+                if(existingWeight == 0 || (weight-existingWeight) == 0) {
+                    tokenWeights.put(token, weight);
+                } else {
+                    
+                }
+                
+                
+                
+            }
+
+        }
+
+
+        /*System.out.println("Indexing file: " + docId);
 
             Map<String, Integer> docMap = new HashMap<>();
 
@@ -84,14 +130,50 @@ public class Driver {
             }
             em.getTransaction().commit();
             em.close();
-            
+
             fileCounter++;
             System.out.println("Done Indexing: " + docId);
             System.out.println("Files Processed - " + fileCounter);
-            System.out.println("--------------------------");
+            System.out.println("--------------------------");*/
+    }
 
+    private static int getTokenWeight(String token) {
+        String identifier = token.substring(0, 3);
+        switch (identifier) {
+            case "|T|":
+                return WEIGHT_TITLE;
+            case "|H|":
+                return WEIGHT_HEADING;
+            case "|B|":
+                return WEIGHT_BODY;
+            default:
+                return WEIGHT_BODY;
         }
+    }
 
+    public static boolean isValidWord(String word) {
+        if (STOP_WORDS.contains(word)
+                || word.length() < 3
+                || word.length() > 45
+                || word.matches(".*\\d+.*")) {
+            return false;
+        }
+        return true;
+    }
+
+    public static boolean isValidHTML(String fileString) {
+        Pattern htmlPattern = Pattern.compile(".*\\<[^>]+>.*", Pattern.DOTALL);
+        return htmlPattern.matcher(fileString).matches();
+    }
+
+    private static String buildSpecificString(String inputText, String appendText) {
+        StringBuilder sb = new StringBuilder();
+        for (String word : inputText.split("[\\W_]+")) {
+            if (isValidWord(word)) {
+                sb.append(appendText + word);
+            }
+        }
+        return sb.toString();
     }
 
     public static String parseHTML(File htmlFile) throws IOException {
@@ -99,14 +181,27 @@ public class Driver {
         if (htmlFile != null) {
             Document doc = Jsoup.parse(htmlFile, "utf-8");
             doc.select("a, script, style, .hidden, option, span").remove();
-            parsedStringBuilder.append(doc.text());
+
+            String titleText = doc.getElementsByTag("title").text().toLowerCase();
+            parsedStringBuilder.append(buildSpecificString(titleText, " |T|"));
+            doc.select("title").remove();
+
+            String headingText = doc.select("h1, h2, h3, h4, h5, h6").text().toLowerCase();
+            parsedStringBuilder.append(buildSpecificString(headingText, " |H|"));
+            doc.select("h1, h2, h3, h4, h5, h6").remove();
+
+            String bodyText = doc.select("body").text().toLowerCase();
+            parsedStringBuilder.append(buildSpecificString(bodyText, " |B|"));
+
             // meta - description
             if (doc.select("meta[name=description]") != null && doc.select("meta[name=description]").size() > 0) {
-                parsedStringBuilder.append(doc.select("meta[name=description]").get(0).attr("content"));
+                String descText = doc.select("meta[name=description]").get(0).attr("content").toLowerCase();
+                parsedStringBuilder.append(buildSpecificString(descText, " |B|"));
             }
             // meta - keywords
             if (doc.select("meta[name=keywords]") != null && doc.select("meta[name=keywords]").size() > 0) {
-                parsedStringBuilder.append(doc.select("meta[name=keywords]").get(0).attr("content"));
+                String keywordText = doc.select("meta[name=description]").get(0).attr("content").toLowerCase();
+                parsedStringBuilder.append(buildSpecificString(keywordText, " |B|"));
             }
 
         }
@@ -157,7 +252,7 @@ public class Driver {
         Token token = new Token();
         TokenPK tokenPK = new TokenPK(tokenName, documentID);
         token.setTokenPK(tokenPK);
-        token.setFrequency(frequency);
+        
 
         em.getTransaction().begin();
         em.persist(token);
