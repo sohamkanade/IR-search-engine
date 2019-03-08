@@ -10,9 +10,10 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
+import java.util.Set;
 import javax.persistence.EntityManager;
 import javax.persistence.EntityManagerFactory;
 import javax.persistence.Persistence;
@@ -20,6 +21,7 @@ import javax.persistence.TypedQuery;
 import org.apache.commons.io.FileUtils;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
+import org.jsoup.parser.Parser;
 
 /**
  *
@@ -27,7 +29,7 @@ import org.jsoup.nodes.Document;
  */
 public class Driver {
 
-    final static String FILE_PATH = "/home/soham/Desktop/blah/";
+    final static String PARENT_FOLDER = "/home/soham/Desktop/webpages/WEBPAGES_RAW/";
 
     final static List<String> STOP_WORDS = Arrays.asList("a", "able", "about", "across", "after", "all", "almost",
             "also", "am", "among", "an", "and", "any", "are", "as", "at", "be", "because", "been", "brought", "but", "by", "can",
@@ -41,11 +43,12 @@ public class Driver {
             "your");
 
     private static final String CHECK_DOCUMENT = "SELECT t FROM Token t WHERE t.tokenPK.tokenName = :tokenName AND t.tokenPK.documentID = :documentID";
+    private static final String DISTINCT_TOKENS = "SELECT distinct(t.tokenPK.tokenName) FROM Token t";
 
     /**
      * Total Documents Indexed
      */
-    private static final int CORPUS_SIZE = 35474;
+    private static final int CORPUS_SIZE = 34317;
 
     /**
      * Weights for Title, Meta, Heading, Body
@@ -55,160 +58,217 @@ public class Driver {
     private static final int WEIGHT_BODY = 30;
 
     private static EntityManagerFactory emFactory;
-    static int fileCounter = 0;
 
     public static void main(String[] args) throws IOException {
         emFactory = Persistence.createEntityManagerFactory("wq2019.inf225_IR-search-engine_jar_1.0PU");
 
-        List<File> files = listAllFiles(new File(FILE_PATH), new ArrayList<>());
+//        for (int i = 0; i < 75; i++) {
+//
+//        }
+        Map<String, Integer> idfMap = getTokenDocCountMap();
 
+        //insertIntoMetaToken(idfMap);
+    }
+
+    private static void insertIntoMetaToken(Map<String, Integer> idfMap) {
+        EntityManager em = emFactory.createEntityManager();
+        em.getTransaction().begin();
+        for (String token : idfMap.keySet()) {
+            int docCount = idfMap.get(token);
+            double logVal = (double) CORPUS_SIZE / docCount;
+            double idfVal = Math.log10(logVal);
+
+            MetaToken mtoken = new MetaToken(token, idfVal);
+            em.persist(mtoken);
+
+        }
+        System.out.println("Committing to DB......");
+        em.getTransaction().commit();        
+        em.close();
+        System.out.println("Committed to DB.");
+    }
+
+    private static Map<String, Integer> getTokenDocCountMap() {
+        EntityManager em = emFactory.createEntityManager();
+        Map<String, Integer> docCountMap = new HashMap<>();
+
+        List<Object[]> results = em
+                .createQuery("SELECT COUNT(t.tokenPK.documentID), t.tokenPK.tokenName FROM Token t GROUP BY t.tokenPK.tokenName").getResultList();
+        for (Object[] result : results) {
+            String tokenName = (String) result[1];
+            int count = ((Number) result[0]).intValue();
+            docCountMap.put(tokenName, count);
+        }
+
+        /*TypedQuery<String> query = em.createQuery(DISTINCT_TOKENS, String.class);
+        em.getTransaction().begin();
+        em.getTransaction().commit();
+        List<String> tokenNames = query.getResultList();
+        em.close();
+        System.out.println(tokenNames.size());
+        return tokenNames;*/
+        System.out.println(docCountMap.size());
+        return docCountMap;
+    }
+
+    private static void createIndex(int folderNumber) throws IOException {
+        int fileCount = 0;
+        int countMapSize = 0;
+        int weightMapSize = 0;
+        int invalidFileCount = 0;
+
+        Set<Token> tokenSet = new HashSet<>();
+
+        String filePath = PARENT_FOLDER + folderNumber + "/";
+        File[] files = new File(filePath).listFiles();
         for (File document : files) {
-            if (!isValidHTML(FileUtils.readFileToString(document))) {
+            fileCount++;
+            String docId = document.getAbsolutePath().replace(PARENT_FOLDER, "").replace("\\", "/");
+            System.out.println("PROGRESS : Current Doc ID - " + docId);
+
+            Map<String, Integer> tokenCountMap = new HashMap<>();
+            Map<String, List<Integer>> weightMap = new HashMap<>();
+
+            try {
+                if (isInvalidHTML(FileUtils.readFileToString(document))) {
+                    System.out.println("INVALID : HTML file - " + docId);
+                    invalidFileCount++;
+                    continue;
+                }
+            } catch (Exception e) {
+                invalidFileCount++;
+                System.out.println("INVALID : Exception occured for DocID - " + docId);
+                System.out.println("INVALID : Exception is - " + e.toString());
                 continue;
             }
 
-            Map<String, Integer> tokenWeights = new HashMap<>();
-            Map<String, Integer> tokenCounter = new HashMap<>();
+            String parsedString = parseHTML(document, weightMap).trim();
+            if (!parsedString.isEmpty()) {
+                String[] parsedStringArray = parsedString.split("\\s+");
 
-            String parsedString = parseHTML(document);
-            String docId = document.getAbsolutePath().replace(FILE_PATH, "").replace("\\", "/");
-            parsedString = parsedString.trim();
-            String[] tokens = parsedString.split(" ");
-            int totalWords = tokens.length;
+                int docWordCount = parsedStringArray.length;
 
-            for (String token : tokens) {
-                int weight = getTokenWeight(token);
-                token = token.substring(3, token.length());
-                
-                int tokenCount = tokenCounter.getOrDefault(token, 0);
-                tokenCount++;
-                tokenCounter.put(token, tokenCount);
-                
-                int existingWeight = tokenWeights.getOrDefault(token, 0);
-                
-                if(existingWeight == 0 || (weight-existingWeight) == 0) {
-                    tokenWeights.put(token, weight);
-                } else {
-                    
-                }
-                
-                
-                
-            }
-
-        }
-
-
-        /*System.out.println("Indexing file: " + docId);
-
-            Map<String, Integer> docMap = new HashMap<>();
-
-            for (String word : parsedString.split("[\\W_]+")) {
-                word = word.toLowerCase();
-
-                if (STOP_WORDS.contains(word) || word.length() < 3 || word.length() > 25 || word.matches("-?\\d+(\\.\\d+)?")) {
-                    continue;
+                for (String token : parsedStringArray) {
+                    int tokenCount = tokenCountMap.getOrDefault(token, 0);
+                    tokenCount++;
+                    tokenCountMap.put(token, tokenCount);
                 }
 
-                Integer wordFreq = docMap.getOrDefault(word, 0);
-                ++wordFreq;
-                docMap.put(word, wordFreq);
+                for (String tokenName : tokenCountMap.keySet()) {
+                    double tFreq = ((double) tokenCountMap.get(tokenName)) / docWordCount;
+                    int weight = 0;
 
-            }
-            EntityManager em = emFactory.createEntityManager();
-            em.getTransaction().begin();
-            for (String key : docMap.keySet()) {
-                // createNewToken(key, docId, docMap.get(key));
+                    weight = sumElementsInList(weightMap.get(tokenName));
 
-                Token token = new Token();
-                TokenPK tokenPK = new TokenPK(key, docId);
-                token.setTokenPK(tokenPK);
-                token.setFrequency(docMap.get(key));
-
-                em.persist(token);
-
-            }
-            em.getTransaction().commit();
-            em.close();
-
-            fileCounter++;
-            System.out.println("Done Indexing: " + docId);
-            System.out.println("Files Processed - " + fileCounter);
-            System.out.println("--------------------------");*/
-    }
-
-    private static int getTokenWeight(String token) {
-        String identifier = token.substring(0, 3);
-        switch (identifier) {
-            case "|T|":
-                return WEIGHT_TITLE;
-            case "|H|":
-                return WEIGHT_HEADING;
-            case "|B|":
-                return WEIGHT_BODY;
-            default:
-                return WEIGHT_BODY;
-        }
-    }
-
-    public static boolean isValidWord(String word) {
-        if (STOP_WORDS.contains(word)
-                || word.length() < 3
-                || word.length() > 45
-                || word.matches(".*\\d+.*")) {
-            return false;
-        }
-        return true;
-    }
-
-    public static boolean isValidHTML(String fileString) {
-        Pattern htmlPattern = Pattern.compile(".*\\<[^>]+>.*", Pattern.DOTALL);
-        return htmlPattern.matcher(fileString).matches();
-    }
-
-    private static String buildSpecificString(String inputText, String appendText) {
-        StringBuilder sb = new StringBuilder();
-        for (String word : inputText.split("[\\W_]+")) {
-            if (isValidWord(word)) {
-                sb.append(appendText + word);
+                    Token tkn = new Token(tokenName, docId);
+                    tkn.setTfrequency(tFreq);
+                    tkn.setWeight(weight);
+                    tokenSet.add(tkn);
+                }
+                countMapSize += tokenCountMap.size();
+                weightMapSize += weightMap.size();
+            } else {
+                invalidFileCount++;
+                System.out.println("INVALID : No tokens in file - " + docId);
             }
         }
-        return sb.toString();
+
+        System.out.println("FINAL STATS : " + fileCount + " files processed. | " + "Invalid Files - " + invalidFileCount + " | Valid Files - " + (fileCount - invalidFileCount));
+        System.out.println("FINAL STATS : Total unique tokens in tokenSet - " + tokenSet.size());
+        System.out.println("FINAL STATS : Total tokens in all count maps - " + countMapSize);
+        System.out.println("FINAL STATS : Total tokens in all weight maps - " + weightMapSize);
+
+        EntityManager em = emFactory.createEntityManager();
+        em.getTransaction().begin();
+        for (Token tkn : tokenSet) {
+            em.persist(tkn);
+        }
+        System.out.println("Persisted " + tokenSet.size() + " tokens.");
+        System.out.println("Committing to DB......");
+        em.getTransaction().commit();
+        System.out.println("Committed to DB.");
+        em.close();
+        System.out.println("Goodbye. Committed Folder " + folderNumber + " to DB.");
     }
 
-    public static String parseHTML(File htmlFile) throws IOException {
+    public static String parseHTML(File htmlFile, Map<String, List<Integer>> weightMap) throws IOException {
         StringBuilder parsedStringBuilder = new StringBuilder();
+
         if (htmlFile != null) {
             Document doc = Jsoup.parse(htmlFile, "utf-8");
-            doc.select("a, script, style, .hidden, option, span").remove();
+            doc.select("a, script, style, .hidden, option").remove();
 
             String titleText = doc.getElementsByTag("title").text().toLowerCase();
-            parsedStringBuilder.append(buildSpecificString(titleText, " |T|"));
             doc.select("title").remove();
+            if (!titleText.isEmpty()) {
+                parsedStringBuilder.append(buildParsedString(titleText, WEIGHT_TITLE, weightMap));
+            }
 
             String headingText = doc.select("h1, h2, h3, h4, h5, h6").text().toLowerCase();
-            parsedStringBuilder.append(buildSpecificString(headingText, " |H|"));
             doc.select("h1, h2, h3, h4, h5, h6").remove();
+            if (!headingText.isEmpty()) {
+                parsedStringBuilder.append(buildParsedString(headingText, WEIGHT_HEADING, weightMap));
+            }
 
             String bodyText = doc.select("body").text().toLowerCase();
-            parsedStringBuilder.append(buildSpecificString(bodyText, " |B|"));
+            if (!bodyText.isEmpty()) {
+                parsedStringBuilder.append(buildParsedString(bodyText, WEIGHT_BODY, weightMap));
+            }
 
             // meta - description
-            if (doc.select("meta[name=description]") != null && doc.select("meta[name=description]").size() > 0) {
+            if (!doc.select("meta[name=description]").isEmpty()) {
                 String descText = doc.select("meta[name=description]").get(0).attr("content").toLowerCase();
-                parsedStringBuilder.append(buildSpecificString(descText, " |B|"));
+                parsedStringBuilder.append(buildParsedString(descText, WEIGHT_BODY, weightMap));
             }
             // meta - keywords
-            if (doc.select("meta[name=keywords]") != null && doc.select("meta[name=keywords]").size() > 0) {
-                String keywordText = doc.select("meta[name=description]").get(0).attr("content").toLowerCase();
-                parsedStringBuilder.append(buildSpecificString(keywordText, " |B|"));
+            if (!doc.select("meta[name=keywords]").isEmpty()) {
+                String keywordText = doc.select("meta[name=keywords]").get(0).attr("content").toLowerCase();
+                parsedStringBuilder.append(buildParsedString(keywordText, WEIGHT_BODY, weightMap));
             }
 
         }
         return parsedStringBuilder.toString();
     }
 
-    public static List<File> listAllFiles(File folder, List<File> files) {
+    private static String buildParsedString(String inputText, int weight, Map<String, List<Integer>> weightMap) {
+        StringBuilder sb = new StringBuilder();
+        for (String word : inputText.split("[\\W_]+")) {
+            if (isValidWord(word)) {
+                List<Integer> weightStrings = weightMap.getOrDefault(word, new ArrayList<>());
+                if (!weightStrings.contains(weight)) {
+                    weightStrings.add(weight);
+                    weightMap.put(word, weightStrings);
+                    sb.append(word).append(" ");
+                }
+            }
+        }
+        return sb.toString();
+    }
+
+    private static boolean isValidWord(String word) {
+        return !(STOP_WORDS.contains(word)
+                || word.length() < 3
+                || word.length() > 45
+                || word.matches(".*\\d+.*"));
+    }
+
+    private static boolean isInvalidHTML(String fileString) {
+        Document doc = Jsoup.parse(fileString, "", Parser.xmlParser());
+        return doc.select("html").isEmpty()
+                && doc.select("head").isEmpty()
+                && doc.select("body").isEmpty();
+
+    }
+
+    private static int sumElementsInList(List<Integer> inputList) {
+        int sum = 0;
+        for (int i : inputList) {
+            sum += i;
+        }
+        return sum;
+    }
+
+    private static List<File> listAllFiles(File folder, List<File> files) {
         File[] fileNames = folder.listFiles();
         if (fileNames != null) {
             for (File file : fileNames) {
@@ -252,7 +312,6 @@ public class Driver {
         Token token = new Token();
         TokenPK tokenPK = new TokenPK(tokenName, documentID);
         token.setTokenPK(tokenPK);
-        
 
         em.getTransaction().begin();
         em.persist(token);
@@ -283,9 +342,9 @@ public class Driver {
         List<String> documentIDs = new ArrayList<>();
 
         if (!resultList.isEmpty()) {
-            for (Token t : resultList) {
+            resultList.forEach((t) -> {
                 documentIDs.add(t.getTokenPK().getDocumentID());
-            }
+            });
         }
         return documentIDs;
 

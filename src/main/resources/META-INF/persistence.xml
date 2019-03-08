@@ -3,6 +3,7 @@
   <persistence-unit name="wq2019.inf225_IR-search-engine_jar_1.0PU" transaction-type="RESOURCE_LOCAL">
     <provider>org.eclipse.persistence.jpa.PersistenceProvider</provider>
     <class>searchengine.Token</class>
+    <class>searchengine.MetaToken</class>
     <properties>
       <property name="javax.persistence.jdbc.url" value="jdbc:mysql://127.0.0.1:3306/irsearchengine?zeroDateTimeBehavior=convertToNull"/>
       <property name="javax.persistence.jdbc.user" value="root"/>
