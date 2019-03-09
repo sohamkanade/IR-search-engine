@@ -9,6 +9,8 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -43,6 +45,7 @@ public class Driver {
             "your");
 
     private static final String CHECK_DOCUMENT = "SELECT t FROM Token t WHERE t.tokenPK.tokenName = :tokenName AND t.tokenPK.documentID = :documentID";
+    private static final String TOKEN_ORDERED = "SELECT t FROM Token t WHERE t.tokenPK.tokenName = :tokenName ORDER BY t.weight DESC, t.tfIdf DESC";
     private static final String DISTINCT_TOKENS = "SELECT distinct(t.tokenPK.tokenName) FROM Token t";
 
     /**
@@ -65,9 +68,131 @@ public class Driver {
 //        for (int i = 0; i < 75; i++) {
 //
 //        }
-        Map<String, Integer> idfMap = getTokenDocCountMap();
-
+        //Map<String, Integer> idfMap = getTokenDocCountMap();
         //insertIntoMetaToken(idfMap);
+        String query = "artificial intelligence";
+        List<DocSearchResult> result = searchQuery(query);
+        if (result.isEmpty()) {
+            System.out.println("Couldn't find a match in the corpus, try again.");
+        } else {
+            System.out.println("Search Complete. Found " + result.size() + " documents.");
+            int rankCounter = 1;
+            for (DocSearchResult dsr : result) {
+                System.out.println("Result Number " + rankCounter);
+                System.out.println("DocID - " + dsr.getDocID() + " | TF-IDF Value - " + dsr.getTfIdf() + " | Weight - " + dsr.getWeight());
+                System.out.println("------------------");
+                rankCounter++;
+            }
+        }
+    }
+
+    private static List<DocSearchResult> searchQuery(String query) {
+        List<String> queryWords = tokenizeQuery(query);
+        if (queryWords.isEmpty()) {
+            return Collections.EMPTY_LIST;
+        }
+        if (queryWords.size() == 1) {
+            return searchForSingleWord(queryWords.get(0));
+        }
+        return searchForMultipleWords(queryWords);
+    }
+
+    private static List<String> tokenizeQuery(String query) {
+        List<String> wordsInQuery = new ArrayList<>();
+        for (String word : query.split("[\\W_]+")) {
+            if (isValidWord(word)) {
+                wordsInQuery.add(word.toLowerCase());
+            }
+        }
+        return wordsInQuery;
+    }
+
+    private static List<DocSearchResult> searchForSingleWord(String word) {
+        List<Token> tknList = getTokensOrdered(word);
+        if (tknList.isEmpty()) {
+            return Collections.EMPTY_LIST;
+        }
+
+        List<DocSearchResult> resultList = new ArrayList<>();
+        for (Token t : tknList) {
+            resultList.add(new DocSearchResult(t.getTokenPK().getDocumentID(), t.getTfIdf(), t.getWeight()));
+        }
+        return resultList;
+    }
+
+    private static List<DocSearchResult> searchForMultipleWords(List<String> words) {
+        Set<String> docIDSetForAllWords = new HashSet<>();
+        Map<String, List<Token>> docIDTokenMap = new HashMap<>();
+
+        //iterate over the words array
+        for (int i = 0; i < words.size(); i++) {
+            String word = words.get(i);
+            List<Token> tknList = getTokens(word);
+            List<String> allDocIDsForCurrentWord = new ArrayList<>();
+            for (Token t : tknList) {
+                String currentDocID = t.getTokenPK().getDocumentID();
+                List<Token> tkns = docIDTokenMap.getOrDefault(currentDocID, new ArrayList<>());
+                tkns.add(t);
+                docIDTokenMap.put(currentDocID, tkns);
+                allDocIDsForCurrentWord.add(currentDocID);
+            }
+            if (i == 0) {
+                docIDSetForAllWords.addAll(allDocIDsForCurrentWord);
+            } else {
+                docIDSetForAllWords.retainAll(allDocIDsForCurrentWord);
+            }
+        }
+
+        if (docIDSetForAllWords.isEmpty()) {
+            return Collections.EMPTY_LIST;
+        }
+
+        List<String> docIDs = new ArrayList<>(docIDTokenMap.keySet());
+
+        for (String docID : docIDs) {
+            if (!docIDSetForAllWords.contains(docID)) {
+                docIDTokenMap.remove(docID);
+            }
+        }
+        return buildReturnList(docIDTokenMap);
+    }
+
+    private static List<DocSearchResult> buildReturnList(Map<String, List<Token>> docIDTokenMap) {
+
+        Map<String, DocSearchResult> docIDSearchResultMap = new HashMap<>();
+        for (String docID : docIDTokenMap.keySet()) {
+            List<Token> correspondingTokens = docIDTokenMap.get(docID);
+            for (Token t : correspondingTokens) {
+                double currentTfIdfVal = t.getTfIdf();
+                double currentWeight = (double) t.getWeight() / correspondingTokens.size();
+                if (docIDSearchResultMap.containsKey(docID)) {
+                    DocSearchResult existingDSR = docIDSearchResultMap.get(docID);
+                    double resultTfIDfVal = existingDSR.getTfIdf() + currentTfIdfVal;
+                    double resultWeight = existingDSR.getWeight() + currentWeight;
+                    existingDSR.setTfIdf(resultTfIDfVal);
+                    existingDSR.setWeight(resultWeight);
+                    docIDSearchResultMap.put(docID, existingDSR);
+                } else {
+                    docIDSearchResultMap.put(docID, new DocSearchResult(docID, currentTfIdfVal, currentWeight));
+                }
+            }
+        }
+
+        List<DocSearchResult> resultList = new ArrayList<>(docIDSearchResultMap.values());
+
+        resultList.sort(Comparator.comparingDouble(DocSearchResult::getWeight)
+                .reversed()
+                .thenComparing(Comparator.comparingDouble(DocSearchResult::getTfIdf)
+                        .reversed()));
+
+        return resultList;
+
+    }
+
+    private static boolean equateTokensOnDocID(Token t1, Token t2) {
+        String docID1 = t1.getTokenPK().getDocumentID();
+        String docID2 = t2.getTokenPK().getDocumentID();
+        return docID1.equals(docID2);
     }
 
     private static void insertIntoMetaToken(Map<String, Integer> idfMap) {
@@ -83,7 +208,7 @@ public class Driver {
 
         }
         System.out.println("Committing to DB......");
-        em.getTransaction().commit();        
+        em.getTransaction().commit();
         em.close();
         System.out.println("Committed to DB.");
     }
@@ -323,12 +448,12 @@ public class Driver {
     }
 
     /**
-     * Gets the corresponding DocumentID for a given Token Name
+     * Gets the corresponding Token records for a given Token Name
      *
      * @param tokenName
      * @return
      */
-    public static List<String> getCorrespondingDocumentIDs(String tokenName) {
+    public static List<Token> getTokens(String tokenName) {
         EntityManager em = emFactory.createEntityManager();
 
         TypedQuery<Token> query = em.createNamedQuery("Token.findByTokenName", Token.class);
@@ -339,15 +464,21 @@ public class Driver {
         List<Token> resultList = query.getResultList();
         em.close();
 
-        List<String> documentIDs = new ArrayList<>();
+        return resultList;
+    }
 
-        if (!resultList.isEmpty()) {
-            resultList.forEach((t) -> {
-                documentIDs.add(t.getTokenPK().getDocumentID());
-            });
-        }
-        return documentIDs;
+    public static List<Token> getTokensOrdered(String tokenName) {
+        EntityManager em = emFactory.createEntityManager();
 
+        TypedQuery<Token> query = em.createQuery(TOKEN_ORDERED, Token.class);
+        query.setParameter("tokenName", tokenName);
+
+        em.getTransaction().begin();
+        em.getTransaction().commit();
+        List<Token> resultList = query.getResultList();
+        em.close();
+
+        return resultList;
     }
 
     /**
