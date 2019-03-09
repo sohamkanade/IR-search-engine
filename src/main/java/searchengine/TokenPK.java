@@ -11,6 +11,7 @@ import javax.persistence.Column;
 import javax.persistence.Embeddable;
 
 /**
+ * Primary Key class for the Composite Key in Token Table
  *
  * @author soham
  */
@@ -76,5 +77,5 @@ public class TokenPK implements Serializable {
     public String toString() {
         return "searchengine.TokenPK[ tokenName=" + tokenName + ", documentID=" + documentID + " ]";
     }
-    
+
 }

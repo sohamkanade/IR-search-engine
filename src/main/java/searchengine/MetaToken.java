@@ -16,6 +16,7 @@ import javax.persistence.Table;
 import javax.xml.bind.annotation.XmlRootElement;
 
 /**
+ * JPA Entity Class for the DB Table - Meta_Token
  *
  * @author soham
  */
@@ -89,5 +90,5 @@ public class MetaToken implements Serializable {
     public String toString() {
         return "searchengine.MetaToken[ tokenName=" + tokenName + " ]";
     }
-    
+
 }

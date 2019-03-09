@@ -16,6 +16,7 @@ import javax.persistence.Table;
 import javax.xml.bind.annotation.XmlRootElement;
 
 /**
+ * JPA Entity Class for the DB Table - Token
  *
  * @author soham
  */
@@ -117,5 +118,5 @@ public class Token implements Serializable {
     public String toString() {
         return "searchengine.Token[ tokenPK=" + tokenPK + " ]";
     }
-    
+
 }

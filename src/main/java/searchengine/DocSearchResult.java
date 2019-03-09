@@ -8,15 +8,32 @@ package searchengine;
 import java.util.Objects;
 
 /**
+ * Output DTO used in final Search Results to be displayed
  *
  * @author soham
  */
 public class DocSearchResult {
 
+    /**
+     * Document ID
+     */
     private String docID;
+    /**
+     * Calculated TF-IDF value for the Document
+     */
     private double tfIdf;
+    /**
+     * Calculate weight for the Document
+     */
     private double weight;
 
+    /**
+     * Constructor
+     *
+     * @param docID
+     * @param tfIDF
+     * @param weight
+     */
     public DocSearchResult(String docID, double tfIDF, double weight) {
         this.docID = docID;
         this.tfIdf = tfIDF;
